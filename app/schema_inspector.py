@@ -62,8 +62,37 @@ def get_foreign_keys(table_name):#
 
     return foreign_keys
 
+#Function to respresent schema
+def get_schema():
+    tables = get_tables()
+
+    schema = {}
+
+    for table in tables:
+        table_name  = table[0]
+
+        columns = get_columns(table_name)
+        foreign_keys = get_foreign_keys(table_name)
+
+        schema[table_name] = {
+            'columns':columns,
+            'foreign_keys':foreign_keys
+        }
+
+    return schema
+
+
 #For testing
 if __name__ == '__main__':
-    foreign_keys = get_foreign_keys("bookings")
-    for foreign_key in foreign_keys:
-        print(foreign_key)
+   schema = get_schema()
+
+   for table_name , table_data in schema.items():
+       print('Table :' , table_name)
+
+       print('columns :')
+       for column in table_data['columns']:
+           print(column)
+
+       print('Foreign_Keys : ')
+       for foreign_key in table_data['foreign_keys']:
+           print(foreign_key)
