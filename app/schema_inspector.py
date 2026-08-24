@@ -35,10 +35,25 @@ def get_columns(table_name):
 
     columns = cursor.fetchall()
 
+    cleaned_columns = []
+
+    for column in columns:
+        column_name = column[0]
+        data_type = column[1]
+        key = column[3]
+
+        clean_column = {
+            'name' : column_name,
+            'type':data_type,
+            'key':key
+        }
+
+        cleaned_columns.append(clean_column)
+
     cursor.close()
     connection.close()
 
-    return columns
+    return cleaned_columns
 
 #function to find foreign-key relationships of any table
 def get_foreign_keys(table_name):#
@@ -57,10 +72,24 @@ def get_foreign_keys(table_name):#
 
     foreign_keys = cursor.fetchall()
 
+    cleaned_foreign_keys = []
+
+    for foreign_key in foreign_keys:
+        column_name = foreign_key[0]
+        reference_table = foreign_key[1]
+        reference_column = foreign_key[2]
+
+        clean_foreign_key  = {
+            'column':column_name,
+            'references':f'{reference_table}.{reference_column}'
+        }
+
+        cleaned_foreign_keys.append(clean_foreign_key)
+
     cursor.close()
     connection.close()
 
-    return foreign_keys
+    return cleaned_foreign_keys
 
 #Function to respresent schema
 def get_schema():
@@ -87,7 +116,7 @@ if __name__ == '__main__':
    schema = get_schema()
 
    for table_name , table_data in schema.items():
-       print('Table :' , table_name)
+       print('\nTable :' , table_name)
 
        print('columns :')
        for column in table_data['columns']:
