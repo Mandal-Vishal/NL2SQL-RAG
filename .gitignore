@@ -1,3 +1,5 @@
 .venv/
 .env
+Workflow.docx
+chroma_db/
 __pycache__/
