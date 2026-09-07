@@ -16,20 +16,31 @@ def search_schema(question , no_of_results):
         n_results = no_of_results
     )
 
-    return results
+    documents = results["documents"][0]
+    distances = results["distances"][0]
+
+    retrieved_docs = []
+
+    for document,distance in zip(documents,distances):
+        retrieved_docs.append({
+            "document":document,
+            "distance" : distance
+        })
+
+    return retrieved_docs
 
 # Testing
 if __name__ == "__main__":
 
     question = "Which customers rented Honda cars?"
 
-    results = search_schema(question , 3)
+    results = search_schema(question, 3)
 
-    print("\nRelevant Schema Documents:\n")
+    for result in results:
 
-    for document in results["documents"][0]:
+        print("Distance:", result["distance"])
 
-        print(document)
+        print(result["document"])
 
         print("=" * 60)
 
