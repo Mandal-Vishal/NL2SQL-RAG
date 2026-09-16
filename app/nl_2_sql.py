@@ -31,16 +31,6 @@ def generate_query(question):
     sql = generate_sql(prompt)
 
     # ---------------------------------------
-    # TEMPORARY TEST
-    # Force an invalid SQL query
-    # ---------------------------------------
-
-    sql = """
-    SELECT customer_name
-    FROM customers;
-    """
-
-    # ---------------------------------------
     # Step 4: Validate generated SQL
     # ---------------------------------------
 
