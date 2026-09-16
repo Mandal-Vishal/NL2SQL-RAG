@@ -30,18 +30,18 @@ def validate_sql(sql):
 
     sql = clean_sql(sql)
 
-    # --------------------------------------------------
-    # 1. Check whether the query is a SELECT statement
-    # --------------------------------------------------
+    # ---------------------------------------
+    # 1. Only allow SELECT queries
+    # ---------------------------------------
 
     if not sql.upper().startswith("SELECT"):
 
         return False, "Only SELECT queries are allowed."
 
 
-    # --------------------------------------------------
+    # ---------------------------------------
     # 2. Block dangerous SQL operations
-    # --------------------------------------------------
+    # ---------------------------------------
 
     dangerous_keywords = [
         "INSERT",
@@ -69,16 +69,16 @@ def validate_sql(sql):
             )
 
 
-    # --------------------------------------------------
+    # ---------------------------------------
     # 3. Get actual database schema
-    # --------------------------------------------------
+    # ---------------------------------------
 
     schema = get_schema()
 
 
-    # --------------------------------------------------
-    # 4. Check table names
-    # --------------------------------------------------
+    # ---------------------------------------
+    # 4. Create table lookup
+    # ---------------------------------------
 
     valid_tables = {
         table_name.lower()
@@ -86,27 +86,38 @@ def validate_sql(sql):
     }
 
 
-    # Find tables after FROM and JOIN
+    # ---------------------------------------
+    # 5. Find tables used by the SQL
+    # ---------------------------------------
+
     table_matches = re.findall(
-        r"\b(?:FROM|JOIN)\s+([a-zA-Z_][a-zA-Z0-9_]*)",
+        r"\b(?:FROM|JOIN)\s+"
+        r"([a-zA-Z_][a-zA-Z0-9_]*)",
         sql,
         flags=re.IGNORECASE
     )
 
 
+    used_tables = set()
+
+
     for table in table_matches:
 
-        if table.lower() not in valid_tables:
+        table_lower = table.lower()
+
+        if table_lower not in valid_tables:
 
             return (
                 False,
                 f"Table does not exist: {table}"
             )
 
+        used_tables.add(table_lower)
 
-    # --------------------------------------------------
-    # 5. Check qualified column names
-    # --------------------------------------------------
+
+    # ---------------------------------------
+    # 6. Build column information
+    # ---------------------------------------
 
     valid_columns = {}
 
@@ -118,18 +129,9 @@ def validate_sql(sql):
         }
 
 
-    # Find expressions like:
-    # customers.customer_id
-    # bookings.car_id
-    # cars.brand
-
-    qualified_columns = re.findall(
-        r"\b([a-zA-Z_][a-zA-Z0-9_]*)\.([a-zA-Z_][a-zA-Z0-9_]*)\b",
-        sql
-    )
-
-
-    # Map aliases to actual table names
+    # ---------------------------------------
+    # 7. Build alias → table mapping
+    # ---------------------------------------
 
     aliases = {}
 
@@ -144,16 +146,27 @@ def validate_sql(sql):
 
     for table_name, alias in alias_matches:
 
+        table_lower = table_name.lower()
+
         if alias:
 
-            aliases[alias.lower()] = table_name.lower()
+            aliases[alias.lower()] = table_lower
 
         else:
 
-            aliases[table_name.lower()] = table_name.lower()
+            aliases[table_lower] = table_lower
 
 
-    # Check each qualified column
+    # ---------------------------------------
+    # 8. Check qualified columns
+    # ---------------------------------------
+
+    qualified_columns = re.findall(
+        r"\b([a-zA-Z_][a-zA-Z0-9_]*)\."
+        r"([a-zA-Z_][a-zA-Z0-9_]*)\b",
+        sql
+    )
+
 
     for table_reference, column_name in qualified_columns:
 
@@ -165,9 +178,6 @@ def validate_sql(sql):
             table_reference
         )
 
-
-        # Skip unknown references for now
-        # They will be handled by MySQL later.
 
         if actual_table not in valid_columns:
 
@@ -183,15 +193,143 @@ def validate_sql(sql):
             )
 
 
+    # ---------------------------------------
+    # 9. Check unqualified columns
+    # ---------------------------------------
+
+    available_columns = set()
+
+    for table in used_tables:
+
+        available_columns.update(
+            valid_columns[table]
+        )
+
+
+    # SQL words that are NOT column names
+    sql_keywords = {
+        "SELECT",
+        "FROM",
+        "WHERE",
+        "JOIN",
+        "ON",
+        "AS",
+        "AND",
+        "OR",
+        "NOT",
+        "NULL",
+        "IS",
+        "IN",
+        "LIKE",
+        "BETWEEN",
+        "GROUP",
+        "BY",
+        "ORDER",
+        "HAVING",
+        "LIMIT",
+        "DISTINCT",
+        "ASC",
+        "DESC",
+        "INNER",
+        "LEFT",
+        "RIGHT",
+        "OUTER",
+        "FULL",
+        "CROSS",
+        "UNION",
+        "ALL",
+        "CASE",
+        "WHEN",
+        "THEN",
+        "ELSE",
+        "END"
+    }
+
+
+    # Common SQL functions
+    sql_functions = {
+        "COUNT",
+        "SUM",
+        "AVG",
+        "MIN",
+        "MAX",
+        "COALESCE",
+        "ROUND",
+        "CONCAT"
+    }
+
+
+    # Remove qualified references from consideration
+    qualified_column_names = {
+        column.lower()
+        for _, column in qualified_columns
+    }
+
+
+    # Find identifiers
+    identifiers = re.findall(
+        r"\b[a-zA-Z_][a-zA-Z0-9_]*\b",
+        sql
+    )
+
+
+    for identifier in identifiers:
+
+        identifier_lower = identifier.lower()
+
+        # Skip SQL keywords
+        if identifier.upper() in sql_keywords:
+            continue
+
+        # Skip SQL functions
+        if identifier.upper() in sql_functions:
+            continue
+
+        # Skip table names
+        if identifier_lower in valid_tables:
+            continue
+
+        # Skip aliases
+        if identifier_lower in aliases:
+            continue
+
+        # Skip columns already checked as qualified
+        if identifier_lower in qualified_column_names:
+            continue
+
+        # Check whether it is a known column
+        if identifier_lower in available_columns:
+            continue
+
+        # Ignore numbers
+        if identifier.isdigit():
+            continue
+
+        # Ignore common SQL literals
+        if identifier.upper() in {
+            "TRUE",
+            "FALSE"
+        }:
+            continue
+
+        # Ignore string contents approximately
+        # (handled more carefully by SQL parser later)
+
+        return (
+            False,
+            f"Unknown column or identifier: {identifier}"
+        )
+
+
     return True, "SQL passed schema validation."
 
 
 if __name__ == "__main__":
 
     test_sql = """
-SELECT customers.customer_name
-FROM customers;
-"""
+    SELECT customer_name
+    FROM customers;
+    """
 
     is_valid, message = validate_sql(test_sql)
 

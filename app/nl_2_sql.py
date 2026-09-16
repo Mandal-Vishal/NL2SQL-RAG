@@ -1,24 +1,105 @@
 from query_vector_store import search_schema
 from prompt_builder import build_sql_prompt
 from llm import generate_sql
+from sql_validator import validate_sql
 
 
 def generate_query(question):
 
+    # ---------------------------------------
     # Step 1: Retrieve relevant schema
+    # ---------------------------------------
+
     retrieved_documents = search_schema(
         question,
         3
     )
 
-    # Step 2: Build the prompt
+    # ---------------------------------------
+    # Step 2: Build initial prompt
+    # ---------------------------------------
+
     prompt = build_sql_prompt(
         question,
         retrieved_documents
     )
 
-    # Step 3: Generate SQL using Gemini
+    # ---------------------------------------
+    # Step 3: Generate SQL
+    # ---------------------------------------
+
     sql = generate_sql(prompt)
+
+    # ---------------------------------------
+    # TEMPORARY TEST
+    # Force an invalid SQL query
+    # ---------------------------------------
+
+    sql = """
+    SELECT customer_name
+    FROM customers;
+    """
+
+    # ---------------------------------------
+    # Step 4: Validate generated SQL
+    # ---------------------------------------
+
+    is_valid, message = validate_sql(sql)
+
+    print("\nValidation result:")
+    print(message)
+
+    # ---------------------------------------
+    # Step 5: Self-correction
+    # ---------------------------------------
+
+    if not is_valid:
+
+        correction_prompt = f"""
+You are an expert MySQL Text-to-SQL system.
+
+The SQL query you previously generated is invalid.
+
+Database schema:
+
+{''.join(
+    result["document"] + "\n\n"
+    for result in retrieved_documents
+)}
+
+Original user question:
+
+{question}
+
+Previous SQL:
+
+{sql}
+
+Validation error:
+
+{message}
+
+Correct the SQL query.
+
+Rules:
+
+1. Use only tables and columns from the provided schema.
+2. Use the provided relationships when constructing JOINs.
+3. Use valid MySQL syntax.
+4. Do not use INSERT, UPDATE, DELETE, DROP, ALTER, or TRUNCATE.
+5. Return only the corrected SQL query.
+"""
+
+        sql = generate_sql(correction_prompt)
+
+        # ---------------------------------------
+        # Validate corrected SQL again
+        # ---------------------------------------
+
+        is_valid, message = validate_sql(sql)
+
+        print("\nAfter self-correction:")
+        print(message)
 
     return sql
 
@@ -29,5 +110,5 @@ if __name__ == "__main__":
 
     sql = generate_query(question)
 
-    print("\nGenerated SQL:\n")
+    print("\nFinal SQL:\n")
     print(sql)
