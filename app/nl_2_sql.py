@@ -2,7 +2,7 @@ from query_vector_store import search_schema
 from prompt_builder import build_sql_prompt
 from llm import generate_sql
 from sql_validator import validate_sql
-
+from database import execute_sql
 
 def generate_query(question):
 
