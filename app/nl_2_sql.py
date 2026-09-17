@@ -4,58 +4,32 @@ from llm import generate_sql
 from sql_validator import validate_sql
 from database import execute_sql
 
-def generate_query(question):
 
-    # ---------------------------------------
-    # Step 1: Retrieve relevant schema
-    # ---------------------------------------
+MAX_CORRECTION_ATTEMPTS = 3
 
-    retrieved_documents = search_schema(
-        question,
-        3
-    )
 
-    # ---------------------------------------
-    # Step 2: Build initial prompt
-    # ---------------------------------------
+def build_correction_prompt(
+    question,
+    retrieved_documents,
+    sql,
+    error_message
+):
 
-    prompt = build_sql_prompt(
-        question,
-        retrieved_documents
-    )
+    schema_context = ""
 
-    # ---------------------------------------
-    # Step 3: Generate SQL
-    # ---------------------------------------
+    for result in retrieved_documents:
 
-    sql = generate_sql(prompt)
+        schema_context += result["document"]
+        schema_context += "\n\n"
 
-    # ---------------------------------------
-    # Step 4: Validate generated SQL
-    # ---------------------------------------
-
-    is_valid, message = validate_sql(sql)
-
-    print("\nValidation result:")
-    print(message)
-
-    # ---------------------------------------
-    # Step 5: Self-correction
-    # ---------------------------------------
-
-    if not is_valid:
-
-        correction_prompt = f"""
+    correction_prompt = f"""
 You are an expert MySQL Text-to-SQL system.
 
-The SQL query you previously generated is invalid.
+The SQL query you generated is invalid.
 
 Database schema:
 
-{''.join(
-    result["document"] + "\n\n"
-    for result in retrieved_documents
-)}
+{schema_context}
 
 Original user question:
 
@@ -65,50 +39,151 @@ Previous SQL:
 
 {sql}
 
-Validation error:
+Error:
 
-{message}
+{error_message}
 
-Correct the SQL query.
+Generate a corrected SQL query.
 
 Rules:
 
-1. Use only tables and columns from the provided schema.
+1. Use only tables and columns present in the provided schema.
 2. Use the provided relationships when constructing JOINs.
 3. Use valid MySQL syntax.
-4. Do not use INSERT, UPDATE, DELETE, DROP, ALTER, or TRUNCATE.
-5. Return only the corrected SQL query.
+4. Only generate SELECT queries.
+5. Do not use INSERT, UPDATE, DELETE, DROP, ALTER, TRUNCATE, CREATE, or RENAME.
+6. Return only the SQL query.
 """
 
-        sql = generate_sql(correction_prompt)
+    return correction_prompt
 
-        # ---------------------------------------
-        # Validate corrected SQL
-        # ---------------------------------------
+
+def generate_query(question):
+
+    # Step 1: Retrieve relevant schema
+    retrieved_documents = search_schema(
+        question,
+        3
+    )
+
+    # Step 2: Build initial prompt
+    prompt = build_sql_prompt(
+        question,
+        retrieved_documents
+    )
+
+    # Step 3: Generate initial SQL
+    sql = generate_sql(prompt)
+    sql = """
+SELECT customer_name
+FROM Customers;
+"""
+
+    # Step 4: Validation + correction loop
+    for attempt in range(MAX_CORRECTION_ATTEMPTS):
+
+        print(
+            f"\nValidation attempt "
+            f"{attempt + 1}/{MAX_CORRECTION_ATTEMPTS}"
+        )
 
         is_valid, message = validate_sql(sql)
 
-        print("\nAfter self-correction:")
-        print(message)
+        print("Validation:", message)
 
-    # ---------------------------------------
-    # Step 6: Final safety gate
-    # ---------------------------------------
+        if is_valid:
 
+            print("SQL passed validation.")
+
+            break
+
+        print("SQL is invalid.")
+
+        # Maximum attempts reached
+        if attempt == MAX_CORRECTION_ATTEMPTS - 1:
+
+            print(
+                "Maximum correction attempts reached."
+            )
+
+            return None
+
+        # Ask Gemini to correct SQL
+        correction_prompt = build_correction_prompt(
+            question,
+            retrieved_documents,
+            sql,
+            message
+        )
+
+        sql = generate_sql(correction_prompt)
+
+    # Step 5: Final safety check
     if not is_valid:
-
-        print("\nSQL is still invalid.")
-        print("Query will NOT be executed.")
 
         return None
 
-    # ---------------------------------------
-    # Step 7: Execute validated SQL
-    # ---------------------------------------
-
+    # Step 6: Execute SQL
     print("\nExecuting SQL...")
 
-    columns, results = execute_sql(sql)
+    try:
+
+        columns, results = execute_sql(sql)
+
+    except Exception as error:
+
+        print("\nDatabase execution error:")
+        print(error)
+
+        # -----------------------------------
+        # Database error correction
+        # -----------------------------------
+
+        correction_prompt = build_correction_prompt(
+            question,
+            retrieved_documents,
+            sql,
+            str(error)
+        )
+
+        corrected_sql = generate_sql(
+            correction_prompt
+        )
+
+        # Validate corrected SQL
+        is_valid, message = validate_sql(
+            corrected_sql
+        )
+
+        print("\nValidation after database error:")
+        print(message)
+
+        if not is_valid:
+
+            print(
+                "Corrected SQL is still invalid."
+            )
+
+            return None
+
+        # Try executing corrected SQL
+        try:
+
+            columns, results = execute_sql(
+                corrected_sql
+            )
+
+            sql = corrected_sql
+
+        except Exception as second_error:
+
+            print(
+                "\nSecond database execution failed:"
+            )
+
+            print(second_error)
+
+            return None
 
     return sql, columns, results
 
@@ -123,13 +198,21 @@ if __name__ == "__main__":
 
         sql, columns, results = result
 
-        print("\nFinal SQL:")
+        print("\n================================")
+        print("FINAL SQL")
+        print("================================")
+
         print(sql)
 
-        print("\nColumns:")
+        print("\n================================")
+        print("COLUMNS")
+        print("================================")
+
         print(columns)
 
-        print("\nDatabase Results:")
+        print("\n================================")
+        print("DATABASE RESULTS")
+        print("================================")
 
         for row in results:
             print(row)
