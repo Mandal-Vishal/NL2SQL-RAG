@@ -83,7 +83,7 @@ Rules:
         sql = generate_sql(correction_prompt)
 
         # ---------------------------------------
-        # Validate corrected SQL again
+        # Validate corrected SQL
         # ---------------------------------------
 
         is_valid, message = validate_sql(sql)
@@ -91,14 +91,45 @@ Rules:
         print("\nAfter self-correction:")
         print(message)
 
-    return sql
+    # ---------------------------------------
+    # Step 6: Final safety gate
+    # ---------------------------------------
+
+    if not is_valid:
+
+        print("\nSQL is still invalid.")
+        print("Query will NOT be executed.")
+
+        return None
+
+    # ---------------------------------------
+    # Step 7: Execute validated SQL
+    # ---------------------------------------
+
+    print("\nExecuting SQL...")
+
+    columns, results = execute_sql(sql)
+
+    return sql, columns, results
 
 
 if __name__ == "__main__":
 
     question = "Which customers rented Honda cars?"
 
-    sql = generate_query(question)
+    result = generate_query(question)
 
-    print("\nFinal SQL:\n")
-    print(sql)
+    if result is not None:
+
+        sql, columns, results = result
+
+        print("\nFinal SQL:")
+        print(sql)
+
+        print("\nColumns:")
+        print(columns)
+
+        print("\nDatabase Results:")
+
+        for row in results:
+            print(row)
