@@ -266,10 +266,24 @@ def validate_sql(sql):
     }
 
 
+    # ---------------------------------------
+    # Remove string literals
+    # ---------------------------------------
+
+    sql_without_strings = re.sub(
+        r"'(?:''|[^'])*'",
+        "''",
+        sql
+    )
+
+
+    # ---------------------------------------
     # Find identifiers
+    # ---------------------------------------
+
     identifiers = re.findall(
         r"\b[a-zA-Z_][a-zA-Z0-9_]*\b",
-        sql
+        sql_without_strings
     )
 
 
@@ -311,9 +325,6 @@ def validate_sql(sql):
             "FALSE"
         }:
             continue
-
-        # Ignore string contents approximately
-        # (handled more carefully by SQL parser later)
 
         return (
             False,
