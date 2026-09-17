@@ -45,7 +45,6 @@ def is_read_only_sql(sql):
 
         return False
 
-    # Dangerous operations
     dangerous_keywords = [
         "INSERT",
         "UPDATE",
@@ -73,7 +72,7 @@ def is_read_only_sql(sql):
 
 def execute_sql(sql):
 
-    # Read-only safety gate
+    # Safety gate
     if not is_read_only_sql(sql):
 
         raise ValueError(
@@ -81,21 +80,38 @@ def execute_sql(sql):
             "Only SELECT queries are allowed."
         )
 
-    connection = get_connection()
+    connection = None
+    cursor = None
 
-    cursor = connection.cursor()
+    try:
 
-    cursor.execute(sql)
+        connection = get_connection()
 
-    results = cursor.fetchall()
+        cursor = connection.cursor()
 
-    columns = cursor.column_names
+        cursor.execute(sql)
 
-    cursor.close()
+        results = cursor.fetchall()
 
-    connection.close()
+        columns = cursor.column_names
 
-    return columns, results
+        return columns, results
+
+    except mysql.connector.Error as error:
+
+        raise RuntimeError(
+            f"MySQL error: {error}"
+        )
+
+    finally:
+        
+        if cursor is not None:
+
+            cursor.close()
+
+        if connection is not None:
+
+            connection.close()
 
 if __name__ == "__main__":
 
@@ -104,13 +120,21 @@ if __name__ == "__main__":
     FROM Customers
     WHERE city = 'Mumbai';
     """
+    
+    try:
 
-    columns, results = execute_sql(test_sql)
+        columns, results = execute_sql(test_sql)
 
-    print("Columns:")
-    print(columns)
+        print("Columns:")
+        print(columns)
 
-    print("\nResults:")
+        print("\nResults:")
 
-    for row in results:
-        print(row)
+        for row in results:
+
+            print(row)
+
+    except Exception as error:
+
+        print("Database error:")
+        print(error)
