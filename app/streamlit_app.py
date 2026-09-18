@@ -1,6 +1,6 @@
 import streamlit as st
 
-from nl2sql import generate_query
+from nl_2_sql import generate_query
 
 # Page configuration
 st.set_page_config(
