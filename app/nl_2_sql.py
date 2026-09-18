@@ -6,6 +6,7 @@ from database import execute_sql
 
 
 MAX_CORRECTION_ATTEMPTS = 3
+MAX_DATABASE_RETRIES = 2
 
 
 def build_correction_prompt(
@@ -60,51 +61,130 @@ Rules:
 
 def generate_query(question):
 
-    # Step 1: Retrieve relevant schema
-    retrieved_documents = search_schema(
-        question,
-        3
-    )
+    # =======================================
+    # Pipeline information
+    # =======================================
 
-    # Step 2: Build initial prompt
-    prompt = build_sql_prompt(
-        question,
-        retrieved_documents
-    )
+    pipeline = {
+        "question": question,
+        "retrieved_documents": [],
+        "validation_attempts": [],
+        "correction_attempts": 0,
+        "execution_attempts": 0,
+        "sql": None,
+        "columns": [],
+        "results": [],
+        "success": False,
+        "error": None
+    }
 
-    # Step 3: Generate initial SQL
-    sql = generate_sql(prompt)
 
-    # Step 4: Validation + correction loop
-    for attempt in range(MAX_CORRECTION_ATTEMPTS):
+    # =======================================
+    # Step 1: Retrieve schema
+    # =======================================
 
-        print(
-            f"\nValidation attempt "
-            f"{attempt + 1}/{MAX_CORRECTION_ATTEMPTS}"
+    try:
+
+        retrieved_documents = search_schema(
+            question,
+            3
         )
+
+        pipeline["retrieved_documents"] = (
+            retrieved_documents
+        )
+
+    except Exception as error:
+
+        pipeline["error"] = (
+            f"Schema retrieval failed: {error}"
+        )
+
+        return pipeline
+
+
+    # =======================================
+    # Step 2: Build initial prompt
+    # =======================================
+
+    try:
+
+        prompt = build_sql_prompt(
+            question,
+            retrieved_documents
+        )
+
+    except Exception as error:
+
+        pipeline["error"] = (
+            f"Prompt construction failed: {error}"
+        )
+
+        return pipeline
+
+
+    # =======================================
+    # Step 3: Generate initial SQL
+    # =======================================
+
+    try:
+
+        sql = generate_sql(prompt)
+
+    except Exception as error:
+
+        pipeline["error"] = (
+            f"LLM generation failed: {error}"
+        )
+
+        return pipeline
+
+
+    # =======================================
+    # Step 4: Validation + self-correction
+    # =======================================
+
+    is_valid = False
+
+    for attempt in range(MAX_CORRECTION_ATTEMPTS):
 
         is_valid, message = validate_sql(sql)
 
-        print("Validation:", message)
+        pipeline["validation_attempts"].append({
+            "attempt": attempt + 1,
+            "sql": sql,
+            "valid": is_valid,
+            "message": message
+        })
+
+
+        # -----------------------------------
+        # SQL is valid
+        # -----------------------------------
 
         if is_valid:
 
-            print("SQL passed validation.")
-
             break
 
-        print("SQL is invalid.")
 
+        # -----------------------------------
         # Maximum attempts reached
+        # -----------------------------------
+
         if attempt == MAX_CORRECTION_ATTEMPTS - 1:
 
-            print(
-                "Maximum correction attempts reached."
+            pipeline["error"] = (
+                "Unable to generate a valid SQL query "
+                "after multiple correction attempts."
             )
 
-            return None
+            return pipeline
 
+
+        # -----------------------------------
         # Ask Gemini to correct SQL
+        # -----------------------------------
+
         correction_prompt = build_correction_prompt(
             question,
             retrieved_documents,
@@ -112,70 +192,180 @@ def generate_query(question):
             message
         )
 
-        sql = generate_sql(correction_prompt)
 
-    # Step 5: Final safety check
-    if not is_valid:
+        try:
 
-        return None
-
-    # Step 6: Execute SQL
-    print("\nExecuting SQL...")
-
-    try:
-
-        columns, results = execute_sql(sql)
-
-    except Exception as error:
-
-        print("\nDatabase execution error:")
-        print(error)
-
-        # Database error correction
-        correction_prompt = build_correction_prompt(
-            question,
-            retrieved_documents,
-            sql,
-            str(error)
-        )
-
-        corrected_sql = generate_sql(
-            correction_prompt
-        )
-
-        # Validate corrected SQL
-        is_valid, message = validate_sql(
-            corrected_sql
-        )
-
-        print("\nValidation after database error:")
-        print(message)
-
-        if not is_valid:
-
-            print(
-                "Corrected SQL is still invalid."
+            sql = generate_sql(
+                correction_prompt
             )
 
-            return None
+            pipeline["correction_attempts"] += 1
 
-        # Try executing corrected SQL
+        except Exception as error:
+
+            pipeline["error"] = (
+                f"SQL correction failed: {error}"
+            )
+
+            return pipeline
+
+
+    # =======================================
+    # Final validation
+    # =======================================
+
+    if not is_valid:
+
+        pipeline["error"] = (
+            "Generated SQL failed validation."
+        )
+
+        return pipeline
+
+
+    pipeline["sql"] = sql
+
+
+    # =======================================
+    # Step 5: Execute SQL
+    # =======================================
+
+    for attempt in range(MAX_DATABASE_RETRIES):
+
+        pipeline["execution_attempts"] += 1
+
         try:
 
             columns, results = execute_sql(
-                corrected_sql
+                sql
             )
+
+            pipeline["columns"] = list(
+                columns
+            )
+
+            pipeline["results"] = [
+                list(row)
+                for row in results
+            ]
+
+            pipeline["success"] = True
+
+            return pipeline
+
+
+        except Exception as error:
+
+            # -----------------------------------
+            # Last database attempt
+            # -----------------------------------
+
+            if attempt == MAX_DATABASE_RETRIES - 1:
+
+                pipeline["error"] = (
+                    f"Database execution failed: {error}"
+                )
+
+                return pipeline
+
+
+            # -----------------------------------
+            # Ask Gemini to correct SQL
+            # -----------------------------------
+
+            correction_prompt = build_correction_prompt(
+                question,
+                retrieved_documents,
+                sql,
+                str(error)
+            )
+
+
+            try:
+
+                corrected_sql = generate_sql(
+                    correction_prompt
+                )
+
+            except Exception as llm_error:
+
+                pipeline["error"] = (
+                    f"Database failed and SQL correction "
+                    f"also failed: {llm_error}"
+                )
+
+                return pipeline
+
+
+            # -----------------------------------
+            # Validate corrected SQL
+            # -----------------------------------
+
+            corrected_valid, corrected_message = (
+                validate_sql(corrected_sql)
+            )
+
+
+            pipeline["validation_attempts"].append({
+                "attempt": len(
+                    pipeline["validation_attempts"]
+                ) + 1,
+                "sql": corrected_sql,
+                "valid": corrected_valid,
+                "message": corrected_message
+            })
+
+
+            if not corrected_valid:
+
+                pipeline["error"] = (
+                    "Database error correction produced "
+                    "invalid SQL."
+                )
+
+                return pipeline
+
 
             sql = corrected_sql
 
-        except Exception as second_error:
+            pipeline["sql"] = sql
 
-            print(
-                "\nSecond database execution failed:"
-            )
 
-            print(second_error)
+    return pipeline
 
-            return None
 
-    return sql, columns, results
+# ==========================================
+# Direct testing
+# ==========================================
+
+if __name__ == "__main__":
+
+    question = "Which customers rented Honda cars?"
+
+    result = generate_query(
+        question
+    )
+
+    print("\n================================")
+    print("SUCCESS")
+    print("================================")
+
+    print(
+        result["success"]
+    )
+
+    print("\n================================")
+    print("SQL")
+    print("================================")
+
+    print(
+        result["sql"]
+    )
+
+    print("\n================================")
+    print("RESULTS")
+    print("================================")
+
+    for row in result["results"]:
+
+        print(row)

@@ -1,13 +1,24 @@
-from sentence_transformers import SentenceTransformer;
+import streamlit as st
+from sentence_transformers import SentenceTransformer
 
-model = SentenceTransformer('all-MiniLM-L6-v2')
+
+@st.cache_resource
+def load_embedding_model():
+
+    return SentenceTransformer(
+        "all-MiniLM-L6-v2"
+    )
+
 
 def create_embedding(text):
-    embedding  = model.encode(text)
+
+    model = load_embedding_model()
+
+    embedding = model.encode(text)
+
     return embedding
 
 
-# Testing
 if __name__ == "__main__":
 
     text = "Which customers rented Honda cars?"
