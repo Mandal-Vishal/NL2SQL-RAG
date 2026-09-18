@@ -30,19 +30,12 @@ def validate_sql(sql):
 
     sql = clean_sql(sql)
 
-    # ---------------------------------------
     # 1. Only allow SELECT queries
-    # ---------------------------------------
-
     if not sql.upper().startswith("SELECT"):
 
         return False, "Only SELECT queries are allowed."
 
-
-    # ---------------------------------------
     # 2. Block dangerous SQL operations
-    # ---------------------------------------
-
     dangerous_keywords = [
         "INSERT",
         "UPDATE",
@@ -68,28 +61,16 @@ def validate_sql(sql):
                 f"Dangerous SQL operation detected: {keyword}"
             )
 
-
-    # ---------------------------------------
     # 3. Get actual database schema
-    # ---------------------------------------
-
     schema = get_schema()
 
-
-    # ---------------------------------------
     # 4. Create table lookup
-    # ---------------------------------------
-
     valid_tables = {
         table_name.lower()
         for table_name in schema.keys()
     }
 
-
-    # ---------------------------------------
     # 5. Find tables used by the SQL
-    # ---------------------------------------
-
     table_matches = re.findall(
         r"\b(?:FROM|JOIN)\s+"
         r"([a-zA-Z_][a-zA-Z0-9_]*)",
@@ -114,11 +95,7 @@ def validate_sql(sql):
 
         used_tables.add(table_lower)
 
-
-    # ---------------------------------------
     # 6. Build column information
-    # ---------------------------------------
-
     valid_columns = {}
 
     for table_name, table_data in schema.items():
@@ -128,11 +105,7 @@ def validate_sql(sql):
             for column in table_data["columns"]
         }
 
-
-    # ---------------------------------------
     # 7. Build alias → table mapping
-    # ---------------------------------------
-
     aliases = {}
 
     alias_matches = re.findall(
@@ -156,11 +129,7 @@ def validate_sql(sql):
 
             aliases[table_lower] = table_lower
 
-
-    # ---------------------------------------
     # 8. Check qualified columns
-    # ---------------------------------------
-
     qualified_columns = re.findall(
         r"\b([a-zA-Z_][a-zA-Z0-9_]*)\."
         r"([a-zA-Z_][a-zA-Z0-9_]*)\b",
@@ -192,11 +161,7 @@ def validate_sql(sql):
                 f"in table '{actual_table}'."
             )
 
-
-    # ---------------------------------------
     # 9. Check unqualified columns
-    # ---------------------------------------
-
     available_columns = set()
 
     for table in used_tables:
@@ -265,22 +230,14 @@ def validate_sql(sql):
         for _, column in qualified_columns
     }
 
-
-    # ---------------------------------------
     # Remove string literals
-    # ---------------------------------------
-
     sql_without_strings = re.sub(
         r"'(?:''|[^'])*'",
         "''",
         sql
     )
 
-
-    # ---------------------------------------
     # Find identifiers
-    # ---------------------------------------
-
     identifiers = re.findall(
         r"\b[a-zA-Z_][a-zA-Z0-9_]*\b",
         sql_without_strings
@@ -333,16 +290,3 @@ def validate_sql(sql):
 
 
     return True, "SQL passed schema validation."
-
-
-if __name__ == "__main__":
-
-    test_sql = """
-    SELECT customer_name
-    FROM customers;
-    """
-
-    is_valid, message = validate_sql(test_sql)
-
-    print("Valid:", is_valid)
-    print("Message:", message)

@@ -74,10 +74,6 @@ def generate_query(question):
 
     # Step 3: Generate initial SQL
     sql = generate_sql(prompt)
-    sql = """
-SELECT customer_name
-FROM Customers;
-"""
 
     # Step 4: Validation + correction loop
     for attempt in range(MAX_CORRECTION_ATTEMPTS):
@@ -135,10 +131,7 @@ FROM Customers;
         print("\nDatabase execution error:")
         print(error)
 
-        # -----------------------------------
         # Database error correction
-        # -----------------------------------
-
         correction_prompt = build_correction_prompt(
             question,
             retrieved_documents,
@@ -186,33 +179,3 @@ FROM Customers;
             return None
 
     return sql, columns, results
-
-
-if __name__ == "__main__":
-
-    question = "Which customers rented Honda cars?"
-
-    result = generate_query(question)
-
-    if result is not None:
-
-        sql, columns, results = result
-
-        print("\n================================")
-        print("FINAL SQL")
-        print("================================")
-
-        print(sql)
-
-        print("\n================================")
-        print("COLUMNS")
-        print("================================")
-
-        print(columns)
-
-        print("\n================================")
-        print("DATABASE RESULTS")
-        print("================================")
-
-        for row in results:
-            print(row)

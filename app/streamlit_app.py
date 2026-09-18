@@ -2,14 +2,22 @@ import streamlit as st
 
 from nl_2_sql import generate_query
 
+
+# ---------------------------------------
 # Page configuration
+# ---------------------------------------
+
 st.set_page_config(
     page_title="NL2SQL RAG System",
     page_icon="🔎",
     layout="wide"
 )
 
+
+# ---------------------------------------
 # Title
+# ---------------------------------------
+
 st.title("NL2SQL RAG System")
 
 st.write(
@@ -17,12 +25,19 @@ st.write(
     "using Retrieval-Augmented Generation."
 )
 
+
+# ---------------------------------------
 # User input
+# ---------------------------------------
+
 question = st.text_input(
     "Ask a question about the database:"
 )
 
+
+# ---------------------------------------
 # Generate SQL
+# ---------------------------------------
 
 if st.button("Generate SQL"):
 
@@ -34,55 +49,93 @@ if st.button("Generate SQL"):
 
     else:
 
-        with st.spinner(
-            "Generating SQL..."
-        ):
+        try:
 
-            result = generate_query(
-                question
-            )
+            with st.spinner(
+                "Generating SQL and fetching results..."
+            ):
 
-        # Check result
-        if result is None:
+                result = generate_query(
+                    question.strip()
+                )
 
-            st.error(
-                "Unable to generate a valid SQL query."
-            )
 
-        else:
+            # -----------------------------------
+            # Check result
+            # -----------------------------------
 
-            sql, columns, results = result
+            if result is None:
 
-            # Generated SQL
-            st.subheader(
-                "Generated SQL"
-            )
-
-            st.code(
-                sql,
-                language="sql"
-            )
-
-            # Database results
-            st.subheader(
-                "Query Results"
-            )
-
-            if results:
-
-                result_data = [
-                    list(row)
-                    for row in results
-                ]
-
-                st.dataframe(
-                    result_data,
-                    use_container_width=True
+                st.error(
+                    "Unable to generate a valid SQL query."
                 )
 
             else:
 
-                st.info(
-                    "The query executed successfully, "
-                    "but returned no results."
+                sql, columns, results = result
+
+
+                # -------------------------------
+                # Generated SQL
+                # -------------------------------
+
+                st.subheader(
+                    "Generated SQL"
                 )
+
+                st.code(
+                    sql,
+                    language="sql"
+                )
+
+
+                # -------------------------------
+                # Query results
+                # -------------------------------
+
+                st.subheader(
+                    "Query Results"
+                )
+
+
+                if results:
+
+                    # Combine column names with row values
+                    result_data = []
+
+                    for row in results:
+
+                        result_row = {}
+
+                        for column, value in zip(
+                            columns,
+                            row
+                        ):
+
+                            result_row[column] = value
+
+                        result_data.append(
+                            result_row
+                        )
+
+
+                    st.dataframe(
+                        result_data,
+                        use_container_width=True,
+                        hide_index=True
+                    )
+
+                else:
+
+                    st.info(
+                        "The query executed successfully, "
+                        "but returned no results."
+                    )
+
+        except Exception as error:
+
+            st.error(
+                "An error occurred while processing your question."
+            )
+
+            st.exception(error)
